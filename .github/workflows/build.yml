@@ -2,132 +2,60 @@ name: Build Flask Android APK
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    env:
+      ANDROIDSDK: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
+      ANDROIDNDK: ${{ github.workspace }}/.buildozer/android/platform/android-ndk-r25b
+      ANDROIDAPI: 31
+      ANDROIDMINAPI: 21
+      PYTHON_VERSION: 3.10
 
-      - name: Install System Dependencies
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Install system dependencies
         run: |
           sudo apt update
           sudo apt install -y \
-            zip unzip openjdk-17-jdk python3-pip git \
-            libssl-dev libffi-dev build-essential \
-            autoconf automake libtool m4 pkg-config gettext \
-            libltdl-dev libtool-bin
+            python3-pip python3-venv \
+            git openjdk-11-jdk \
+            build-essential \
+            libssl-dev zlib1g-dev \
+            curl wget unzip
 
-      - name: Install Python Dependencies
+      - name: Set Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.10
+
+      - name: Install Buildozer
         run: |
           python -m pip install --upgrade pip
-          pip install buildozer cython virtualenv
+          pip install --upgrade buildozer Cython==0.29.36
 
-      - name: Setup Android SDK
+      - name: Patch PyJNIus for Python 3
         run: |
-          mkdir -p $HOME/android-sdk
-          export ANDROID_SDK_ROOT=$HOME/android-sdk
-          export ANDROID_HOME=$ANDROID_SDK_ROOT
+          pip install --upgrade pyjnius==1.4.0
+          # Optional: patch if needed
+          PYJNIUS_DIR=$(python -c "import jnius; import os; print(os.path.dirname(jnius.__file__))")
+          sed -i 's/isinstance(arg, long)/isinstance(arg, int)/g' $PYJNIUS_DIR/jnius_utils.pxi || true
 
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/tools.zip
-          unzip -q /tmp/tools.zip -d $ANDROID_SDK_ROOT/cmdline-tools
-          mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+      - name: Initialize Buildozer
+        run: buildozer android clean
 
-          mkdir -p $ANDROID_SDK_ROOT/tools/bin
-          ln -s $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/* $ANDROID_SDK_ROOT/tools/bin/
+      - name: Build APK
+        run: buildozer -v android debug
 
-          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_SDK_ROOT/tools/bin" >> $GITHUB_PATH
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
-          echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH
-
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-
-      - name: Install Android Packages
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager \
-            "platform-tools" \
-            "build-tools;34.0.0" \
-            "platforms;android-34" \
-            "ndk;25.2.9519653"
-
-      - name: Setup Buildozer Directories
-        run: |
-          mkdir -p ~/.buildozer/android/platform
-          ln -sfn $ANDROID_SDK_ROOT ~/.buildozer/android/platform/android-sdk
-          NDK_PATH=$(find $ANDROID_SDK_ROOT -name "ndk*" -type d | head -n 1)
-          if [ -n "$NDK_PATH" ]; then
-            ln -sfn "$NDK_PATH" ~/.buildozer/android/platform/android-ndk
-          fi
-
-      - name: Create minimal configure.ac for libtool (if needed)
-        run: |
-          if [ ! -f "configure.ac" ] && [ ! -f "configure.in" ]; then
-            echo "AC_INIT([dummy], [1.0])" > configure.ac
-            echo "AM_INIT_AUTOMAKE" >> configure.ac
-            echo "AC_PROG_CC" >> configure.ac
-            echo "AC_PROG_LIBTOOL" >> configure.ac
-            echo "AC_CONFIG_FILES([Makefile])" >> configure.ac
-            echo "AC_OUTPUT" >> configure.ac
-          fi
-
-      - name: Create minimal Makefile.am (if needed)
-        run: |
-          if [ -f "configure.ac" ] && [ ! -f "Makefile.am" ]; then
-            echo "SUBDIRS =" > Makefile.am
-          fi
-
-      - name: Setup libtool environment
-        run: |
-          export ACLOCAL_FLAGS="-I /usr/share/aclocal -I /usr/local/share/aclocal"
-          export ACLOCAL_PATH="/usr/share/aclocal:/usr/local/share/aclocal"
-
-          if [ -f "configure.ac" ]; then
-            libtoolize --force --copy || true
-            aclocal -I m4 || true
-            autoconf || true
-            automake --add-missing --copy || true
-            autoreconf -vfi || true
-          fi
-
-      - name: Build APK with Buildozer
-        run: |
-          export ACLOCAL_FLAGS="-I /usr/share/aclocal -I /usr/local/share/aclocal"
-          export ACLOCAL_PATH="/usr/share/aclocal:/usr/local/share/aclocal"
-
-          if [ ! -f "buildozer.spec" ]; then
-            buildozer init
-          fi
-
-          cp buildozer.spec buildozer.spec.backup || true
-
-          sed -i 's/#android.ndk = 21/android.ndk = 25.2.9519653/' buildozer.spec || true
-          sed -i 's/android.ndk = .*/android.ndk = 25.2.9519653/' buildozer.spec || true
-          sed -i 's/#android.sdk = 20/android.sdk = 34/' buildozer.spec || true
-          sed -i 's/android.sdk = .*/android.sdk = 34/' buildozer.spec || true
-          sed -i 's/#p4a.branch = master/p4a.branch = develop/' buildozer.spec || true
-          sed -i 's/p4a.branch = .*/p4a.branch = develop/' buildozer.spec || true
-
-          echo "Starting buildozer build..."
-          buildozer -v android debug 2>&1 | tee build.log
-
-      - name: Upload APK artifact
-        if: success()
-        uses: actions/upload-artifact@v4
+      - name: Upload APK
+        uses: actions/upload-artifact@v3
         with:
-          name: android-apk
+          name: myflaskapp.apk
           path: bin/*.apk
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
