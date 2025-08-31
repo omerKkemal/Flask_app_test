@@ -1,4 +1,4 @@
-name: Build flask-android APK
+name: Build Flask Android APK
 
 on:
   push:
@@ -37,7 +37,7 @@ jobs:
           unzip -q /tmp/tools.zip -d $ANDROID_SDK_ROOT/cmdline-tools
           mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
           
-          # Legacy Buildozer tools/bin path
+          # Legacy Buildozer path
           mkdir -p $ANDROID_SDK_ROOT/tools/bin
           ln -s $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/* $ANDROID_SDK_ROOT/tools/bin/
           
@@ -69,10 +69,10 @@ jobs:
 
       - name: Build APK with Buildozer
         run: |
-          # Force regenerate autotools files for native libraries
           export ACLOCAL_FLAGS="-I /usr/share/aclocal"
+          # Force regenerate autotools files to avoid LT_SYS_SYMBOL_USCORE
           autoreconf -vfi || true
-
+          
           if [ -f "buildozer.spec" ]; then
             echo "Using existing buildozer.spec"
           else
