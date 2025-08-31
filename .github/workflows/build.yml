@@ -33,20 +33,19 @@ jobs:
           mkdir -p $HOME/android-sdk
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export ANDROID_HOME=$ANDROID_SDK_ROOT
-          
+
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/tools.zip
           unzip -q /tmp/tools.zip -d $ANDROID_SDK_ROOT/cmdline-tools
           mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
-          
-          # Legacy Buildozer path
+
           mkdir -p $ANDROID_SDK_ROOT/tools/bin
           ln -s $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/* $ANDROID_SDK_ROOT/tools/bin/
-          
+
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/tools/bin" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH
-          
+
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
@@ -65,46 +64,37 @@ jobs:
           ln -sfn $ANDROID_SDK_ROOT ~/.buildozer/android/platform/android-sdk
           NDK_PATH=$(find $ANDROID_SDK_ROOT -name "ndk*" -type d | head -n 1)
           if [ -n "$NDK_PATH" ]; then
-            ln -sfn $NDK_PATH ~/.buildozer/android/platform/android-ndk
+            ln -sfn "$NDK_PATH" ~/.buildozer/android/platform/android-ndk
           fi
 
       - name: Create minimal configure.ac for libtool (if needed)
         run: |
           if [ ! -f "configure.ac" ] && [ ! -f "configure.in" ]; then
-            echo "Creating minimal configure.ac for libtool support"
-            cat > configure.ac << 'EOF'
-AC_INIT([dummy], [1.0])
-AM_INIT_AUTOMAKE
-AC_PROG_CC
-AC_PROG_LIBTOOL
-AC_CONFIG_FILES([Makefile])
-AC_OUTPUT
-EOF
+            echo "AC_INIT([dummy], [1.0])" > configure.ac
+            echo "AM_INIT_AUTOMAKE" >> configure.ac
+            echo "AC_PROG_CC" >> configure.ac
+            echo "AC_PROG_LIBTOOL" >> configure.ac
+            echo "AC_CONFIG_FILES([Makefile])" >> configure.ac
+            echo "AC_OUTPUT" >> configure.ac
           fi
 
       - name: Create minimal Makefile.am (if needed)
         run: |
           if [ -f "configure.ac" ] && [ ! -f "Makefile.am" ]; then
-            echo "Creating minimal Makefile.am"
-            cat > Makefile.am << 'EOF'
-SUBDIRS =
-EOF
+            echo "SUBDIRS =" > Makefile.am
           fi
 
       - name: Setup libtool environment
         run: |
           export ACLOCAL_FLAGS="-I /usr/share/aclocal -I /usr/local/share/aclocal"
           export ACLOCAL_PATH="/usr/share/aclocal:/usr/local/share/aclocal"
-          
+
           if [ -f "configure.ac" ]; then
-            echo "Setting up autotools for libtool support"
             libtoolize --force --copy || true
             aclocal -I m4 || true
             autoconf || true
             automake --add-missing --copy || true
             autoreconf -vfi || true
-          else
-            echo "No configure.ac found, skipping autotools setup"
           fi
 
       - name: Build APK with Buildozer
@@ -112,28 +102,19 @@ EOF
           export ACLOCAL_FLAGS="-I /usr/share/aclocal -I /usr/local/share/aclocal"
           export ACLOCAL_PATH="/usr/share/aclocal:/usr/local/share/aclocal"
 
-          if [ -f "buildozer.spec" ]; then
-            echo "Using existing buildozer.spec"
-          else
+          if [ ! -f "buildozer.spec" ]; then
             buildozer init
           fi
 
-          # Backup original spec
           cp buildozer.spec buildozer.spec.backup || true
 
-          # Update NDK version
           sed -i 's/#android.ndk = 21/android.ndk = 25.2.9519653/' buildozer.spec || true
           sed -i 's/android.ndk = .*/android.ndk = 25.2.9519653/' buildozer.spec || true
-
-          # Update SDK version
           sed -i 's/#android.sdk = 20/android.sdk = 34/' buildozer.spec || true
           sed -i 's/android.sdk = .*/android.sdk = 34/' buildozer.spec || true
-
-          # Use develop branch for python-for-android
           sed -i 's/#p4a.branch = master/p4a.branch = develop/' buildozer.spec || true
           sed -i 's/p4a.branch = .*/p4a.branch = develop/' buildozer.spec || true
 
-          # Build with verbose output
           echo "Starting buildozer build..."
           buildozer -v android debug 2>&1 | tee build.log
 
