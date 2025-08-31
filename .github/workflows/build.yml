@@ -77,8 +77,11 @@ jobs:
 
       - name: Build APK with Buildozer
         run: |
-          # Initialize buildozer if needed
-          if [ ! -f .buildozer/config.ini ]; then
+          # Check if buildozer.spec exists and is valid
+          if [ -f "buildozer.spec" ]; then
+            echo "Using existing buildozer.spec file"
+          else
+            echo "No buildozer.spec found, initializing..."
             buildozer init
           fi
           
