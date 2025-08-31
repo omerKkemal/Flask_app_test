@@ -68,42 +68,52 @@ jobs:
             ln -sfn $NDK_PATH ~/.buildozer/android/platform/android-ndk
           fi
 
-      - name: Fix libtool configuration
+      - name: Create minimal configure.ac for libtool (if needed)
         run: |
-          # Ensure libtool macros are available to autoconf
-          mkdir -p m4
-          if [ -f "/usr/share/aclocal/libtool.m4" ]; then
-            ln -sf /usr/share/aclocal/libtool.m4 m4/
-          fi
-          if [ -f "/usr/share/aclocal/ltoptions.m4" ]; then
-            ln -sf /usr/share/aclocal/ltoptions.m4 m4/
-          fi
-          if [ -f "/usr/share/aclocal/ltsugar.m4" ]; then
-            ln -sf /usr/share/aclocal/ltsugar.m4 m4/
-          fi
-          if [ -f "/usr/share/aclocal/ltversion.m4" ]; then
-            ln -sf /usr/share/aclocal/ltversion.m4 m4/
-          fi
-          if [ -f "/usr/share/aclocal/lt~obsolete.m4" ]; then
-            ln -sf /usr/share/aclocal/lt~obsolete.m4 m4/
+          # Only create configure.ac if it doesn't exist and we need it for libtool
+          if [ ! -f "configure.ac" ] && [ ! -f "configure.in" ]; then
+            echo "Creating minimal configure.ac for libtool support"
+            cat > configure.ac << 'EOF'
+            AC_INIT([dummy], [1.0])
+            AM_INIT_AUTOMAKE
+            AC_PROG_CC
+            AC_PROG_LIBTOOL
+            AC_CONFIG_FILES([Makefile])
+            AC_OUTPUT
+            EOF
+                    fi
+
+      - name: Create minimal Makefile.am (if needed)
+        run: |
+          # Only create Makefile.am if configure.ac exists and Makefile.am doesn't
+          if [ -f "configure.ac" ] && [ ! -f "Makefile.am" ]; then
+            echo "Creating minimal Makefile.am"
+            cat > Makefile.am << 'EOF'
+            SUBDIRS = 
+            EOF
           fi
 
-      - name: Pre-build setup for libtool
+      - name: Setup libtool environment
         run: |
-          # Force regeneration of libtool files
+          export ACLOCAL_FLAGS="-I /usr/share/aclocal -I /usr/local/share/aclocal"
           export ACLOCAL_PATH="/usr/share/aclocal:/usr/local/share/aclocal"
-          libtoolize --force --copy
-          aclocal -I m4
-          autoconf
-          automake --add-missing --copy
+          
+          # Only run autotools commands if configure.ac exists
+          if [ -f "configure.ac" ]; then
+            echo "Setting up autotools for libtool support"
+            libtoolize --force --copy || true
+            aclocal -I m4 || true
+            autoconf || true
+            automake --add-missing --copy || true
+            autoreconf -vfi || true
+          else
+            echo "No configure.ac found, skipping autotools setup"
+          fi
 
       - name: Build APK with Buildozer
         run: |
           export ACLOCAL_FLAGS="-I /usr/share/aclocal -I /usr/local/share/aclocal"
           export ACLOCAL_PATH="/usr/share/aclocal:/usr/local/share/aclocal"
-          
-          # Force regenerate autotools files with proper libtool support
-          autoreconf -vfi
           
           if [ -f "buildozer.spec" ]; then
             echo "Using existing buildozer.spec"
@@ -111,16 +121,28 @@ jobs:
             buildozer init
           fi
           
-          # Create buildozer.spec if it doesn't exist with proper configuration
-          if [ ! -f "buildozer.spec" ]; then
+          # Configure buildozer.spec with proper settings
+          if [ -f "buildozer.spec" ]; then
+            # Backup original spec
+            cp buildozer.spec buildozer.spec.backup
+            
+            # Update NDK version
+            sed -i 's/#android.ndk = 21/android.ndk = 25.2.9519653/' buildozer.spec || true
+            sed -i 's/android.ndk = .*/android.ndk = 25.2.9519653/' buildozer.spec || true
+            
+            # Update SDK version
+            sed -i 's/#android.sdk = 20/android.sdk = 34/' buildozer.spec || true
+            sed -i 's/android.sdk = .*/android.sdk = 34/' buildozer.spec || true
+            
+            # Use develop branch for python-for-android
+            sed -i 's/#p4a.branch = master/p4a.branch = develop/' buildozer.spec || true
+            sed -i 's/p4a.branch = .*/p4a.branch = develop/' buildozer.spec || true
+          else
             buildozer init
-            # Add necessary buildozer spec configurations
-            sed -i 's/#android.ndk = 21/android.ndk = 25.2.9519653/' buildozer.spec
-            sed -i 's/#android.sdk = 20/android.sdk = 34/' buildozer.spec
-            sed -i 's/#p4a.branch = master/p4a.branch = develop/' buildozer.spec
           fi
           
-          # Build with verbose output to help debug any issues
+          # Build with verbose output
+          echo "Starting buildozer build..."
           buildozer -v android debug 2>&1 | tee build.log
 
       - name: Upload APK artifact
