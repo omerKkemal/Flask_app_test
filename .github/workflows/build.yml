@@ -70,27 +70,25 @@ jobs:
 
       - name: Create minimal configure.ac for libtool (if needed)
         run: |
-          # Only create configure.ac if it doesn't exist and we need it for libtool
           if [ ! -f "configure.ac" ] && [ ! -f "configure.in" ]; then
             echo "Creating minimal configure.ac for libtool support"
             cat > configure.ac << 'EOF'
-            AC_INIT([dummy], [1.0])
-            AM_INIT_AUTOMAKE
-            AC_PROG_CC
-            AC_PROG_LIBTOOL
-            AC_CONFIG_FILES([Makefile])
-            AC_OUTPUT
-            EOF
-                    fi
+AC_INIT([dummy], [1.0])
+AM_INIT_AUTOMAKE
+AC_PROG_CC
+AC_PROG_LIBTOOL
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT
+EOF
+          fi
 
       - name: Create minimal Makefile.am (if needed)
         run: |
-          # Only create Makefile.am if configure.ac exists and Makefile.am doesn't
           if [ -f "configure.ac" ] && [ ! -f "Makefile.am" ]; then
             echo "Creating minimal Makefile.am"
             cat > Makefile.am << 'EOF'
-            SUBDIRS = 
-            EOF
+SUBDIRS =
+EOF
           fi
 
       - name: Setup libtool environment
@@ -98,7 +96,6 @@ jobs:
           export ACLOCAL_FLAGS="-I /usr/share/aclocal -I /usr/local/share/aclocal"
           export ACLOCAL_PATH="/usr/share/aclocal:/usr/local/share/aclocal"
           
-          # Only run autotools commands if configure.ac exists
           if [ -f "configure.ac" ]; then
             echo "Setting up autotools for libtool support"
             libtoolize --force --copy || true
@@ -114,33 +111,28 @@ jobs:
         run: |
           export ACLOCAL_FLAGS="-I /usr/share/aclocal -I /usr/local/share/aclocal"
           export ACLOCAL_PATH="/usr/share/aclocal:/usr/local/share/aclocal"
-          
+
           if [ -f "buildozer.spec" ]; then
             echo "Using existing buildozer.spec"
           else
             buildozer init
           fi
-          
-          # Configure buildozer.spec with proper settings
-          if [ -f "buildozer.spec" ]; then
-            # Backup original spec
-            cp buildozer.spec buildozer.spec.backup
-            
-            # Update NDK version
-            sed -i 's/#android.ndk = 21/android.ndk = 25.2.9519653/' buildozer.spec || true
-            sed -i 's/android.ndk = .*/android.ndk = 25.2.9519653/' buildozer.spec || true
-            
-            # Update SDK version
-            sed -i 's/#android.sdk = 20/android.sdk = 34/' buildozer.spec || true
-            sed -i 's/android.sdk = .*/android.sdk = 34/' buildozer.spec || true
-            
-            # Use develop branch for python-for-android
-            sed -i 's/#p4a.branch = master/p4a.branch = develop/' buildozer.spec || true
-            sed -i 's/p4a.branch = .*/p4a.branch = develop/' buildozer.spec || true
-          else
-            buildozer init
-          fi
-          
+
+          # Backup original spec
+          cp buildozer.spec buildozer.spec.backup || true
+
+          # Update NDK version
+          sed -i 's/#android.ndk = 21/android.ndk = 25.2.9519653/' buildozer.spec || true
+          sed -i 's/android.ndk = .*/android.ndk = 25.2.9519653/' buildozer.spec || true
+
+          # Update SDK version
+          sed -i 's/#android.sdk = 20/android.sdk = 34/' buildozer.spec || true
+          sed -i 's/android.sdk = .*/android.sdk = 34/' buildozer.spec || true
+
+          # Use develop branch for python-for-android
+          sed -i 's/#p4a.branch = master/p4a.branch = develop/' buildozer.spec || true
+          sed -i 's/p4a.branch = .*/p4a.branch = develop/' buildozer.spec || true
+
           # Build with verbose output
           echo "Starting buildozer build..."
           buildozer -v android debug 2>&1 | tee build.log
