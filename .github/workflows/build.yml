@@ -14,23 +14,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-          # Remove the cache line since we don't have requirements.txt
-
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git zip unzip openjdk-17-jdk libssl-dev libffi-dev build-essential
+          sudo apt-get install -y git zip unzip openjdk-17-jdk libssl-dev libffi-dev build-essential python3-pip
 
-      - name: Install Python dependencies directly
+      - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install buildozer cython
+          python3 -m pip install --upgrade pip
+          pip3 install buildozer cython
 
-      - name: Set up Android SDK manually
+      - name: Set up Android SDK
         run: |
           # Create Android SDK directory
           mkdir -p $HOME/android-sdk
@@ -51,17 +45,37 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
-      - name: Install Android packages
+      - name: Install Android packages with specific build-tools version
         run: |
           # Accept licenses first
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
           
-          # Install required packages
+          # Install specific versions that include Aidl
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
-            "build-tools;34.0.0" \
+            "build-tools;30.0.3" \  # Version known to include Aidl
+            "build-tools;34.0.0" \  # Latest version
             "platforms;android-34" \
             "ndk;25.2.9519653"
+
+      - name: Verify Aidl installation
+        run: |
+          # Check if Aidl exists in any build-tools directory
+          find $ANDROID_SDK_ROOT/build-tools -name "aidl" -type f | head -5
+          
+          # List available build-tools versions
+          ls -la $ANDROID_SDK_ROOT/build-tools/ || echo "No build-tools directory"
+          
+          # Check specific versions
+          if [ -f "$ANDROID_SDK_ROOT/build-tools/30.0.3/aidl" ]; then
+            echo "Aidl found in build-tools 30.0.3"
+            $ANDROID_SDK_ROOT/build-tools/30.0.3/aidl --version || echo "Aidl version check failed"
+          fi
+          
+          if [ -f "$ANDROID_SDK_ROOT/build-tools/34.0.0/aidl" ]; then
+            echo "Aidl found in build-tools 34.0.0"
+            $ANDROID_SDK_ROOT/build-tools/34.0.0/aidl --version || echo "Aidl version check failed"
+          fi
 
       - name: Set up Buildozer directories with correct paths
         run: |
@@ -85,6 +99,21 @@ jobs:
           else
             echo "Warning: NDK not found"
           fi
+
+      - name: Create symlink for Aidl if missing
+        run: |
+          # Check if Aidl exists in any build-tools version and create symlink
+          for version in "34.0.0" "30.0.3"; do
+            if [ -f "$ANDROID_SDK_ROOT/build-tools/$version/aidl" ]; then
+              echo "Found Aidl in build-tools $version"
+              # Ensure the target directory exists
+              mkdir -p ~/.buildozer/android/platform/android-sdk/build-tools/$version/
+              # Create symlink
+              ln -sfn $ANDROID_SDK_ROOT/build-tools/$version/aidl ~/.buildozer/android/platform/android-sdk/build-tools/$version/aidl
+              echo "Created symlink for Aidl from version $version"
+              break
+            fi
+          done
 
       - name: Build with Buildozer
         run: |
