@@ -17,7 +17,10 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt update
-          sudo apt install -y zip unzip openjdk-17-jdk python3-pip git libssl-dev libffi-dev build-essential autoconf automake libtool
+          sudo apt install -y \
+            zip unzip openjdk-17-jdk python3-pip git \
+            libssl-dev libffi-dev build-essential \
+            autoconf automake libtool m4 pkg-config
 
       - name: Install Python Dependencies
         run: |
@@ -30,12 +33,11 @@ jobs:
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           
-          # Download command line tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/tools.zip
           unzip -q /tmp/tools.zip -d $ANDROID_SDK_ROOT/cmdline-tools
           mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
           
-          # Create legacy tools/bin for Buildozer
+          # Legacy tools/bin path for Buildozer
           mkdir -p $ANDROID_SDK_ROOT/tools/bin
           ln -s $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/* $ANDROID_SDK_ROOT/tools/bin/
           
@@ -43,7 +45,7 @@ jobs:
           echo "$ANDROID_SDK_ROOT/tools/bin" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH
-
+          
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
@@ -60,8 +62,6 @@ jobs:
         run: |
           mkdir -p ~/.buildozer/android/platform
           ln -sfn $ANDROID_SDK_ROOT ~/.buildozer/android/platform/android-sdk
-          
-          # Link NDK
           NDK_PATH=$(find $ANDROID_SDK_ROOT -name "ndk*" -type d | head -n 1)
           if [ -n "$NDK_PATH" ]; then
             ln -sfn $NDK_PATH ~/.buildozer/android/platform/android-ndk
@@ -75,16 +75,3 @@ jobs:
             buildozer init
           fi
           buildozer -v android debug
-
-      - name: List Generated Files
-        run: |
-          ls -la bin/ 2>/dev/null || echo "No bin directory found"
-          find . -name "*.apk" -o -name "*.aab" 2>/dev/null | head -n 10 || echo "No APK files found"
-
-      - name: Upload APK Artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: flask-android-apk
-          path: bin/*.apk
-          if-no-files-found: error
